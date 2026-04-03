@@ -64,19 +64,24 @@ pipeline {
                 }
             }
         }
-
         stage('Deploy to Kubernetes') {
-            steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-                    sh '''
-                    kubectl apply -f k8s/deployment.yaml
-                    kubectl apply -f k8s/service.yaml
-                    kubectl rollout status deployment/python-app
-                    '''
-                }
-            }
-        }
-    }
+ 	   steps {
+      	      withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+           	 sh '''
+          	 sed -i "s|IMAGE_TAG|$IMAGE_TAG|g" k8s/deployment.yaml
+
+          	 kubectl apply -f k8s/deployment.yaml
+           	 kubectl apply -f k8s/service.yaml
+
+           	 kubectl rollout status deployment/python-app --timeout=60s || {
+             	 echo "❌ Deployment failed. Rolling back..."
+             	 kubectl rollout undo deployment/python-app
+             	 exit 1
+           	 }
+            '''
+       	       }
+   	    }
+	}     
 
     post {
         success {

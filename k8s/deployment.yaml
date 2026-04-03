@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: python-app
-        image: boobesh/python-app:latest
+        image: boobesh18/python-app:IMAGE_TAG
         ports:
         - containerPort: 5000
 
