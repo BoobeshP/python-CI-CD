@@ -13,21 +13,23 @@ pipeline {
                     url: 'https://github.com/BoobeshP/python-CI-CD.git',
                     branch: 'main'
             }
-        }
-
+        }        
+        
         stage('SonarQube Code Scan') {
-            steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh '''
-                    sonar-scanner \
-                    -Dsonar.projectKey=python \
-                    -Dsonar.sources=.
-                    '''
+   	     steps {
+      	        script {
+           	    def scannerHome = tool 'SonarScanner'
+        withSonarQubeEnv('SonarQube') {
+                sh """
+                ${scannerHome}/bin/sonar-scanner \
+                -Dsonar.projectKey=python \
+                -Dsonar.sources=.
+                """
                 }
-            }
-        }
-
-        stage('Build & Unit Test') {
+             }
+           }
+         }    
+	 stage('Build & Unit Test') {
             steps {
                 sh '''
                 python3 -m venv venv
