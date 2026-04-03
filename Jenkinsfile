@@ -91,7 +91,7 @@ pipeline {
             }
         }
 
-        ✅ stage('Cleanup Old Docker Images') {
+        stage('Cleanup Old Docker Images') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
