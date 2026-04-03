@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "boobeshp/python-ci-cd"
+        IMAGE_NAME = "boobesh18/python-ci-cd"
     }
 
     stages {
