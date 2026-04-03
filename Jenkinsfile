@@ -3,6 +3,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = "boobesh18/python-ci-cd"
+        IMAGE_TAG  = "build-${BUILD_NUMBER}"
     }
 
     stages {
@@ -13,23 +14,24 @@ pipeline {
                     url: 'https://github.com/BoobeshP/python-CI-CD.git',
                     branch: 'main'
             }
-        }        
-        
+        }
+
         stage('SonarQube Code Scan') {
-   	     steps {
-      	        script {
-           	    def scannerHome = tool 'SonarScanner'
-        withSonarQubeEnv('SonarQube') {
-                sh """
-                ${scannerHome}/bin/sonar-scanner \
-                -Dsonar.projectKey=python \
-                -Dsonar.sources=.
-                """
+            steps {
+                script {
+                    def scannerHome = tool 'SonarScanner'
+                    withSonarQubeEnv('SonarQube') {
+                        sh """
+                        ${scannerHome}/bin/sonar-scanner \
+                        -Dsonar.projectKey=python \
+                        -Dsonar.sources=.
+                        """
+                    }
                 }
-             }
-           }
-         }    
-	 stage('Build & Unit Test') {
+            }
+        }
+
+        stage('Build & Unit Test') {
             steps {
                 sh '''
                 python3 -m venv venv
@@ -43,8 +45,8 @@ pipeline {
         stage('Docker Build') {
             steps {
                 sh '''
-                docker build -t $IMAGE_NAME:${BUILD_NUMBER} .
-                docker tag $IMAGE_NAME:${BUILD_NUMBER} $IMAGE_NAME:latest
+                docker build -t $IMAGE_NAME:$IMAGE_TAG .
+                docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
                 '''
             }
         }
@@ -58,38 +60,39 @@ pipeline {
                 )]) {
                     sh '''
                     echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                    docker push $IMAGE_NAME:${BUILD_NUMBER}
+                    docker push $IMAGE_NAME:$IMAGE_TAG
                     docker push $IMAGE_NAME:latest
                     '''
                 }
             }
         }
+
         stage('Deploy to Kubernetes') {
- 	   steps {
-      	      withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-           	 sh '''
-          	 sed -i "s|IMAGE_TAG|$IMAGE_TAG|g" k8s/deployment.yaml
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                    sed -i "s|IMAGE_TAG|$IMAGE_TAG|g" k8s/deployment.yaml
 
-          	 kubectl apply -f k8s/deployment.yaml
-           	 kubectl apply -f k8s/service.yaml
+                    kubectl apply -f k8s/deployment.yaml
+                    kubectl apply -f k8s/service.yaml
 
-           	 kubectl rollout status deployment/python-app --timeout=60s || {
-             	 echo "❌ Deployment failed. Rolling back..."
-             	 kubectl rollout undo deployment/python-app
-             	 exit 1
-           	 }
-            '''
-       	       }
-   	    }
-	}     
+                    kubectl rollout status deployment/python-app --timeout=60s || {
+                        echo "❌ Deployment failed. Rolling back..."
+                        kubectl rollout undo deployment/python-app
+                        exit 1
+                    }
+                    '''
+                }
+            }
+        }
+    }
 
     post {
         success {
             echo '✅ CI/CD Pipeline executed successfully'
         }
         failure {
-            echo '❌ Pipeline failed. Check logs.'
+            echo '❌ CI/CD Pipeline failed'
         }
     }
 }
-
