@@ -2,37 +2,23 @@ pipeline {
     agent any
 
     options {
-        disableConcurrentBuilds()
+        disableConcurrentBuilds()   // ✅ only one pipeline at a time
         timestamps()
     }
 
     environment {
         IMAGE_NAME = "boobesh18/python-ci-cd"
         IMAGE_TAG  = "build-${BUILD_NUMBER}"
+        REPO_NAME  = "python-ci-cd"
+        KEEP_BUILDS = "3"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git credentialsId: 'github-creds',
-                    url: 'https://github.com/BoobeshP/python-CI-CD.git',
+                git url: 'https://github.com/BoobeshP/python-CI-CD.git',
                     branch: 'main'
-            }
-        }
-
-        stage('SonarQube Code Scan') {
-            steps {
-                script {
-                    def scannerHome = tool 'SonarScanner'
-                    withSonarQubeEnv('SonarQube') {
-                        sh """
-                        ${scannerHome}/bin/sonar-scanner \
-                        -Dsonar.projectKey=python \
-                        -Dsonar.sources=.
-                        """
-                    }
-                }
             }
         }
 
@@ -61,10 +47,10 @@ pipeline {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
                     usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
+                    passwordVariable: 'DOCKER_TOKEN'
                 )]) {
                     sh '''
-                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USER" --password-stdin
                     docker push $IMAGE_NAME:$IMAGE_TAG
                     docker push $IMAGE_NAME:latest
                     '''
@@ -91,20 +77,32 @@ pipeline {
             }
         }
 
-        stage('Cleanup Old Docker Images') {
+        stage('Clean Old Docker Hub Tags') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'USER',
-                    passwordVariable: 'PASS'
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_TOKEN'
                 )]) {
                     sh '''
-                    echo "--- Keeping last 3 build images ---"
-                    docker images "$IMAGE_NAME" --format "{{.Tag}}" \
+                    echo "🧹 Cleaning old Docker Hub tags (keep last $KEEP_BUILDS)..."
+
+                    TAGS=$(curl -s -u "$DOCKER_USER:$DOCKER_TOKEN" \
+                      "https://hub.docker.com/v2/repositories/$DOCKER_USER/$REPO_NAME/tags/?page_size=100" \
+                      | jq -r '.results[].name')
+
+                    DELETE_TAGS=$(echo "$TAGS" \
                       | grep '^build-' \
                       | sort -V \
-                      | head -n -3 \
-                      | xargs -r -I {} docker rmi "$IMAGE_NAME:{}" || true
+                      | head -n -$KEEP_BUILDS || true)
+
+                    for tag in $DELETE_TAGS; do
+                      echo "Deleting remote tag: $tag"
+                      curl -s -X DELETE -u "$DOCKER_USER:$DOCKER_TOKEN" \
+                        "https://hub.docker.com/v2/repositories/$DOCKER_USER/$REPO_NAME/tags/$tag/"
+                    done
+
+                    echo "✅ Docker Hub cleanup complete"
                     '''
                 }
             }
@@ -113,10 +111,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ CI/CD Pipeline executed successfully'
+            echo '✅ CI/CD Pipeline SUCCESS'
         }
         failure {
-            echo '❌ CI/CD Pipeline failed'
+            echo '❌ CI/CD Pipeline FAILED'
         }
     }
 }
