@@ -108,7 +108,53 @@ pipeline {
             }
         }
     }
+    stage('Clean Docker Hub Tags (Keep Last 3)') {
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'dockerhub-creds',
+            usernameVariable: 'DOCKER_USER',
+            passwordVariable: 'DOCKER_TOKEN'
+        )]) {
+            sh '''
+            set -e
 
+            REPO="python-ci-cd"
+            KEEP=3
+            PAGE=1
+            TAGS=""
+
+            echo "🔍 Fetching ALL Docker Hub tags..."
+
+            while true; do
+              RESPONSE=$(curl -s -u "$DOCKER_USER:$DOCKER_TOKEN" \
+                "https://hub.docker.com/v2/repositories/$DOCKER_USER/$REPO/tags/?page=$PAGE&page_size=100")
+
+              PAGE_TAGS=$(echo "$RESPONSE" | jq -r '.results[].name')
+              [ -z "$PAGE_TAGS" ] && break
+
+              TAGS="$TAGS $PAGE_TAGS"
+              PAGE=$((PAGE + 1))
+            done
+
+            echo "📦 All tags found:"
+            echo "$TAGS"
+
+            DELETE_TAGS=$(echo "$TAGS" \
+              | grep '^build-' \
+              | sort -V \
+              | head -n -$KEEP || true)
+
+            for tag in $DELETE_TAGS; do
+              echo "❌ Deleting tag: $tag"
+              curl -sf -X DELETE -u "$DOCKER_USER:$DOCKER_TOKEN" \
+                "https://hub.docker.com/v2/repositories/$DOCKER_USER/$REPO/tags/$tag/"
+            done
+
+            echo "✅ Cleanup completed"
+            '''
+        }
+    }
+}
     post {
         success {
             echo '✅ CI/CD Pipeline SUCCESS'
