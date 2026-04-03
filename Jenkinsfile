@@ -1,6 +1,6 @@
 pipeline {
     agent any
-    
+
     options {
         disableConcurrentBuilds()
         timestamps()
@@ -81,46 +81,36 @@ pipeline {
                     kubectl apply -f k8s/deployment.yaml
                     kubectl apply -f k8s/service.yaml
 
-                    kubectl rollout status deployment/python-app --timeout=60s || {
-                        echo "❌ Deployment failed. Rolling back..."
-                        kubectl rollout undo deployment/python-app
-                        exit 1
+                    kubectl rollout status deployment/python-app --timeout=120s || {
+                      echo "❌ Deployment failed. Rolling back..."
+                      kubectl rollout undo deployment/python-app
+                      exit 1
                     }
                     '''
                 }
             }
         }
+
+        ✅ stage('Cleanup Old Docker Images') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
+                    sh '''
+                    echo "--- Keeping last 3 build images ---"
+                    docker images "$IMAGE_NAME" --format "{{.Tag}}" \
+                      | grep '^build-' \
+                      | sort -V \
+                      | head -n -3 \
+                      | xargs -r -I {} docker rmi "$IMAGE_NAME:{}" || true
+                    '''
+                }
+            }
+        }
     }
-    stage('Cleanup Old Docker Images') {
-      steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'dockerhub-creds',
-            usernameVariable: 'USER',
-            passwordVariable: 'PASS'
-        )]) {
-            sh '''
-            echo "--- Cleaning old Docker images (keep last 3) ---"
 
-            # Authenticate Docker Hub API
-            AUTH=$(echo -n "$USER:$PASS" | base64)
-
-            # Fetch tags, skip latest & rollback, keep last 3 builds
-            TAGS=$(curl -s -H "Authorization: Basic $AUTH" \
-              https://hub.docker.com/v2/repositories/$USER/python-ci-cd/tags/?page_size=100 \
-              | jq -r '.results[].name' \
-              | grep build- \
-              | sort -V \
-              | head -n -3)
-
-            for tag in $TAGS; do
-              echo "Deleting tag $tag"
-              curl -s -X DELETE -H "Authorization: Basic $AUTH" \
-              https://hub.docker.com/v2/repositories/$USER/python-ci-cd/tags/$tag/
-            done
-            '''
-             }
-          }
-       }
     post {
         success {
             echo '✅ CI/CD Pipeline executed successfully'
